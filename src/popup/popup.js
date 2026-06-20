@@ -138,7 +138,7 @@ async function init() {
     const max = chrome.declarativeNetRequest.MAX_NUMBER_OF_REGEX_RULES; // touch API to confirm availability
     void max;
   } catch (_) { /* ignore */ }
-  els.ruleCount.textContent = "70+";
+  els.ruleCount.textContent = "180+";
 
   loadBlockedCount();
 }

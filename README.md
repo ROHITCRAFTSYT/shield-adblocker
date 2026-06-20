@@ -9,11 +9,15 @@ permission footprint, no remote code, and no data collection.
 > "build your own adblocker" tutorial — upgraded from the deprecated Manifest V2
 > `webRequest` approach to MV3 `declarativeNetRequest`.
 
+<p align="center">
+  <img src="docs/popup.svg" alt="Shield AdBlocker popup — a tactical shield-console HUD" width="336" />
+</p>
+
 ---
 
 ## Features
 
-- **Network-level blocking** of 70+ well-known ad/tracker networks
+- **Network-level blocking** of 180+ well-known ad/tracker networks
   (Google Ads, DoubleClick, Taboola, Outbrain, Criteo, Amazon Ads, analytics
   beacons, and more) via `declarativeNetRequest`.
 - **Cosmetic filtering** — collapses ad containers and sponsored slots, with
@@ -83,25 +87,42 @@ Full threat model in [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Limitations
 
-- The bundled list covers **common** ad networks, not the full breadth of
-  EasyList. It is easy to extend — add entries to
-  [`rules/network-rules.json`](rules/network-rules.json) and selectors to
+- The bundled list (180+ networks) covers **common** ad/tracker domains, not the
+  full breadth of EasyList. It is easy to extend — add entries to
+  [`rules/ad-domains.txt`](rules/ad-domains.txt) and selectors to
   [`src/content/selectors.js`](src/content/selectors.js).
 - "Block every ad on every site" and "undetectable" are best-effort goals, not
   guarantees — see the caveats above.
 - Chromium only (MV3). Firefox is not targeted in this build.
 
+## Updating the blocklist
+
+The blocklist is generated, not hand-edited. Add domains to
+[`rules/ad-domains.txt`](rules/ad-domains.txt) (one per line) and regenerate:
+
+```bash
+npm run build:rules     # rebuilds rules/network-rules.json from ad-domains.txt
+npm run lint            # validates JSON + lints JS (also runs in CI)
+```
+
+`npm run lint:json` checks that `network-rules.json` is valid and **in sync**
+with the source list — CI fails if you edit one without rebuilding.
+
 ## Project layout
 
 ```
 manifest.json            MV3 manifest
-rules/network-rules.json declarativeNetRequest static blocklist
+rules/ad-domains.txt      blocklist source (one domain per line)
+rules/network-rules.json  generated declarativeNetRequest static blocklist
+scripts/build-rules.mjs   compiles ad-domains.txt -> network-rules.json
+scripts/validate-rules.mjs CI guard: JSON valid + in sync
 src/background.js         service worker (ruleset toggle, allowlist, messaging)
 src/content/selectors.js  static cosmetic selectors
 src/content/cosmetic.js   cosmetic filtering engine
 src/popup/                popup UI (html/css/js)
 icons/                    extension icons
-docs/                     install, architecture, security
+docs/                     install, architecture, security, screenshot
+.github/workflows/        CI (lint)
 ```
 
 ## Contributing

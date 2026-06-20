@@ -4,20 +4,31 @@ Thanks for your interest in improving Shield AdBlocker!
 
 ## Development setup
 
-There is no build step. Load the repo as an unpacked extension
+The extension itself needs no build — load the repo as an unpacked extension
 (see [docs/INSTALL.md](docs/INSTALL.md)) and reload it from `chrome://extensions`
-after each change.
+after each change. Tooling (rule generation + lint) uses Node:
+
+```bash
+npm install     # installs eslint (dev only; not shipped in the extension)
+npm run lint    # what CI runs: validate blocklist + eslint
+```
 
 ## Adding network blocking rules
 
-Edit [`rules/network-rules.json`](rules/network-rules.json):
+The blocklist is **generated** — do not edit `rules/network-rules.json` by hand.
 
-- Use a **unique integer `id`** (keep them sequential; static rules live in the
-  `1..999999` range — do not use `1000000+`, which is reserved for runtime allow
-  rules).
-- Prefer `"urlFilter": "||domain.tld^"` with `"domainType": "thirdParty"` to
-  avoid breaking first-party functionality.
-- Keep `"priority": 1` for block rules.
+1. Add domains (one per line) to [`rules/ad-domains.txt`](rules/ad-domains.txt).
+   Use a registrable domain, optionally with a path fragment
+   (e.g. `facebook.com/tr`). Avoid first-party CDNs that would break sites.
+2. Regenerate and validate:
+
+   ```bash
+   npm run build:rules   # rebuilds network-rules.json (third-party block rules)
+   npm run lint          # validates JSON is in sync + lints JS
+   ```
+
+Each domain compiles to a `"||domain^"` rule with `"domainType": "thirdParty"`.
+CI rejects PRs where `network-rules.json` is out of sync with the source list.
 
 ## Adding cosmetic selectors
 
