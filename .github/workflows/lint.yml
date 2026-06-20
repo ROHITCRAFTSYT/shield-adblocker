@@ -1,0 +1,36 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate blocklist (JSON valid + in sync with source)
+        run: npm run lint:json
+
+      - name: Lint JavaScript (eslint)
+        run: npm run lint:js
+
+      - name: Verify rules are committed in built form
+        run: |
+          npm run build:rules
+          git diff --exit-code rules/network-rules.json \
+            || (echo "::error::network-rules.json is stale — run 'npm run build:rules' and commit" && exit 1)
