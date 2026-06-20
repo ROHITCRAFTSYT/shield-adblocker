@@ -13,7 +13,8 @@ const els = {
   siteSub: document.getElementById("siteSub"),
   blockedCount: document.getElementById("blockedCount"),
   ruleCount: document.getElementById("ruleCount"),
-  status: document.getElementById("status")
+  status: document.getElementById("status"),
+  stateWord: document.getElementById("stateWord")
 };
 
 let currentHost = null;
@@ -66,10 +67,24 @@ async function loadBlockedCount() {
   try {
     const info = await chrome.declarativeNetRequest.getMatchedRules({ tabId: currentTabId });
     const matches = (info && info.rulesMatchedInfo) ? info.rulesMatchedInfo.length : 0;
-    els.blockedCount.textContent = String(matches);
+    setCount(matches);
   } catch (_) {
     els.blockedCount.textContent = "—";
   }
+}
+
+// Set the big number with a subtle HUD "pop" (Web Animations API — CSP-safe).
+function setCount(value) {
+  els.blockedCount.textContent = String(value);
+  try {
+    els.blockedCount.animate(
+      [
+        { transform: "translateY(4px)", opacity: 0.2 },
+        { transform: "translateY(0)", opacity: 1 }
+      ],
+      { duration: 320, easing: "cubic-bezier(.2,.7,.3,1)" }
+    );
+  } catch (_) { /* animation unsupported; value is already set */ }
 }
 
 function render(state) {
@@ -79,7 +94,7 @@ function render(state) {
   const allowed = currentHost ? state.allowlist.indexOf(currentHost) !== -1 : false;
 
   if (!currentHost) {
-    els.site.textContent = "This page can't be filtered";
+    els.site.textContent = "this page can't be filtered";
     els.siteToggle.checked = false;
     els.siteToggle.disabled = true;
     els.siteSub.textContent = "Browser/internal page";
@@ -90,7 +105,18 @@ function render(state) {
     els.siteSub.textContent = allowed ? "Blocking paused here" : "Pause blocking on this domain";
   }
 
-  setStatus(enabled ? "Protection on" : "Protection off");
+  // Drive the HUD's signal state: armed / paused-here / off.
+  let mode, word, status;
+  if (!enabled) {
+    mode = "off"; word = "OFFLINE"; status = "shield down";
+  } else if (allowed) {
+    mode = "allow"; word = "ALLOWED"; status = "paused · this site";
+  } else {
+    mode = "on"; word = "PROTECTED"; status = "armed";
+  }
+  document.body.setAttribute("data-state", mode);
+  els.stateWord.textContent = word;
+  setStatus(status);
 }
 
 async function init() {

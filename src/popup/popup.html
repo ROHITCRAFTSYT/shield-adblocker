@@ -6,50 +6,76 @@
   <title>Shield AdBlocker</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
-<body>
-  <header class="head">
-    <div class="logo" aria-hidden="true">🛡️</div>
-    <div class="titles">
-      <h1>Shield AdBlocker</h1>
-      <p id="site" class="site">—</p>
+<body data-state="on">
+  <div class="grain" aria-hidden="true"></div>
+  <div class="glow" aria-hidden="true"></div>
+  <div class="scan" aria-hidden="true"></div>
+
+  <header class="hud">
+    <div class="brand">
+      <span class="mark">◇</span>
+      <span class="word">SHIELD</span>
+      <span class="ver">v1.0</span>
+    </div>
+    <div class="conn">
+      <span class="dot" id="stateDot"></span>
+      <span class="conn-txt" id="status">init…</span>
     </div>
   </header>
 
-  <section class="row">
-    <div class="row-label">
-      <span class="row-title">Blocking</span>
-      <span class="row-sub" id="globalSub">Network + cosmetic filtering</span>
+  <section class="hero reveal" style="--d:1">
+    <div class="emblem">
+      <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
+        <circle class="ring-track" cx="60" cy="60" r="52" />
+        <circle class="ring-arc" cx="60" cy="60" r="52" />
+        <path class="ring-shield" d="M60 30 L86 41 L86 64 C86 81 60 93 60 93 C60 93 34 81 34 64 L34 41 Z" />
+        <path class="ring-check" d="M49 62 L57 70 L73 51" />
+      </svg>
     </div>
-    <label class="switch" title="Enable or disable globally">
-      <input type="checkbox" id="globalToggle" />
-      <span class="slider"></span>
+    <div class="hero-text">
+      <div class="state-word" id="stateWord">PROTECTED</div>
+      <div class="site" id="site">—</div>
+    </div>
+  </section>
+
+  <section class="readout reveal" style="--d:2">
+    <div class="big-stat">
+      <div class="num" id="blockedCount">—</div>
+      <div class="cap"><span class="tick">▌</span> blocked · this page</div>
+    </div>
+    <div class="mini">
+      <div class="mini-num" id="ruleCount">—</div>
+      <div class="mini-cap">rules<br />armed</div>
+    </div>
+  </section>
+
+  <section class="controls reveal" style="--d:3">
+    <label class="ctl">
+      <span class="ctl-meta">
+        <span class="ctl-title">Master shield</span>
+        <span class="ctl-sub" id="globalSub">Network + cosmetic filtering</span>
+      </span>
+      <span class="sw">
+        <input type="checkbox" id="globalToggle" />
+        <span class="sw-track"><span class="sw-knob"></span></span>
+      </span>
+    </label>
+
+    <label class="ctl" id="siteRow">
+      <span class="ctl-meta">
+        <span class="ctl-title">Allow this site</span>
+        <span class="ctl-sub" id="siteSub">Pause blocking on this domain</span>
+      </span>
+      <span class="sw">
+        <input type="checkbox" id="siteToggle" />
+        <span class="sw-track"><span class="sw-knob"></span></span>
+      </span>
     </label>
   </section>
 
-  <section class="row" id="siteRow">
-    <div class="row-label">
-      <span class="row-title">Allow this site</span>
-      <span class="row-sub" id="siteSub">Pause blocking on this domain</span>
-    </div>
-    <label class="switch" title="Allowlist the current site">
-      <input type="checkbox" id="siteToggle" />
-      <span class="slider"></span>
-    </label>
-  </section>
-
-  <section class="stats">
-    <div class="stat">
-      <span class="stat-num" id="blockedCount">—</span>
-      <span class="stat-cap">blocked on this page</span>
-    </div>
-    <div class="stat">
-      <span class="stat-num" id="ruleCount">—</span>
-      <span class="stat-cap">block rules active</span>
-    </div>
-  </section>
-
-  <footer class="foot">
-    <span id="status" class="status">Loading…</span>
+  <footer class="foot reveal" style="--d:4">
+    <span class="foot-id">SHIELD ADBLOCKER</span>
+    <span class="foot-meta">no telemetry · runs local</span>
   </footer>
 
   <script src="popup.js"></script>

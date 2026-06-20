@@ -16,3 +16,6 @@ desktop.ini
 # Node (only if tooling is added later)
 node_modules/
 npm-debug.log*
+
+# Local preview harness
+.preview/
