@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shield AdBlocker</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="head">
+    <div class="logo" aria-hidden="true">🛡️</div>
+    <div class="titles">
+      <h1>Shield AdBlocker</h1>
+      <p id="site" class="site">—</p>
+    </div>
+  </header>
+
+  <section class="row">
+    <div class="row-label">
+      <span class="row-title">Blocking</span>
+      <span class="row-sub" id="globalSub">Network + cosmetic filtering</span>
+    </div>
+    <label class="switch" title="Enable or disable globally">
+      <input type="checkbox" id="globalToggle" />
+      <span class="slider"></span>
+    </label>
+  </section>
+
+  <section class="row" id="siteRow">
+    <div class="row-label">
+      <span class="row-title">Allow this site</span>
+      <span class="row-sub" id="siteSub">Pause blocking on this domain</span>
+    </div>
+    <label class="switch" title="Allowlist the current site">
+      <input type="checkbox" id="siteToggle" />
+      <span class="slider"></span>
+    </label>
+  </section>
+
+  <section class="stats">
+    <div class="stat">
+      <span class="stat-num" id="blockedCount">—</span>
+      <span class="stat-cap">blocked on this page</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num" id="ruleCount">—</span>
+      <span class="stat-cap">block rules active</span>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span id="status" class="status">Loading…</span>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
