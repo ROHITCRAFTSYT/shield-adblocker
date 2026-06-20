@@ -1,0 +1,18 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# Claude / tooling
+.claude/
+
+# Packaged builds
+*.zip
+*.crx
+*.pem
+
+# Node (only if tooling is added later)
+node_modules/
+npm-debug.log*
