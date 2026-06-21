@@ -1,4 +1,4 @@
-# 🛡️ Shield AdBlocker
+# Shield AdBlocker
 
 A fast, private, **Manifest V3** ad and tracker blocker for Chromium browsers
 (Chrome, Edge, Brave, Opera). It blocks ads at the **network layer** and hides
