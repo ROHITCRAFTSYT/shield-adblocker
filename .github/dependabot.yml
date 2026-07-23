@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # GitHub Actions used by the lint workflow
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # Node tooling declared in package.json
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      node-dependencies:
+        patterns: ["*"]
