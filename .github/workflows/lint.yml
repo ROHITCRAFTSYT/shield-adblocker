@@ -31,6 +31,9 @@ jobs:
       - name: Lint JavaScript (eslint)
         run: npm run lint:js
 
+      - name: Unit tests (node --test)
+        run: npm test
+
       - name: Verify rules are committed in built form
         run: |
           npm run build:rules

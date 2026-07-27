@@ -8,7 +8,8 @@
     "build:rules": "node scripts/build-rules.mjs",
     "lint:json": "node scripts/validate-rules.mjs",
     "lint:js": "eslint .",
-    "lint": "npm run lint:json && npm run lint:js"
+    "lint": "npm run lint:json && npm run lint:js",
+    "test": "node --test"
   },
   "license": "MIT",
   "author": "ROHITCRAFTSYT",
