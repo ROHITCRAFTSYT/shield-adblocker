@@ -20,7 +20,6 @@ google-analytics.com
 analytics.google.com
 2mdn.net
 app-measurement.com
-googleadservices.com
 adsense.google.com
 
 # --- Amazon / Microsoft / Yahoo / Yandex ad systems ---
