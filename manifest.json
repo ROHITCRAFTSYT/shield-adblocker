@@ -3,7 +3,7 @@
   "name": "Shield AdBlocker",
   "version": "1.0.0",
   "description": "A fast, private, stealthy ad and tracker blocker. Network-level blocking + cosmetic filtering. No data collection, no remote code.",
-  "author": "rohit07.mgs",
+  "author": "ROHITCRAFTSYT",
   "minimum_chrome_version": "102",
   "icons": {
     "16": "icons/icon16.png",
