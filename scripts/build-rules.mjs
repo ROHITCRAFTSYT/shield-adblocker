@@ -37,6 +37,32 @@ export function parseDomains(text) {
   return domains;
 }
 
+/**
+ * Entries already covered by a broader entry in the same list. "||a.com^"
+ * matches a.com and every subdomain and path, so "x.a.com" or "a.com/path"
+ * next to "a.com" only spends rule quota. Returns [entry, coveredBy] pairs.
+ * @param {string[]} domains output of parseDomains
+ * @returns {Array<[string, string]>}
+ */
+export function findRedundantEntries(domains) {
+  const bare = new Set(domains.filter((d) => !d.includes("/")));
+  const out = [];
+  for (const d of domains) {
+    const slash = d.indexOf("/");
+    const host = slash === -1 ? d : d.slice(0, slash);
+    // A path entry is covered by its own bare host, or by any parent of it.
+    const labels = host.split(".");
+    for (let i = slash === -1 ? 1 : 0; i < labels.length - 1; i++) {
+      const parent = labels.slice(i).join(".");
+      if (bare.has(parent)) {
+        out.push([d, parent]);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 export function buildRules(domains) {
   return domains.map((domain, i) => ({
     id: i + 1,

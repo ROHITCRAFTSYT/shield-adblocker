@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseDomains, buildRules } from "../scripts/build-rules.mjs";
+import { parseDomains, buildRules, findRedundantEntries } from "../scripts/build-rules.mjs";
 
 test("parseDomains skips blank lines and comments", () => {
   const out = parseDomains("# a comment\n\n  \nfacebook.com\n");
@@ -58,4 +58,17 @@ test("pipeline is deterministic: same input -> identical rules", () => {
   const second = buildRules(parseDomains(txt));
   assert.deepEqual(first, second);
   assert.equal(first.length, 2);
+});
+
+test("findRedundantEntries flags subdomains and paths covered by a broader entry", () => {
+  const list = ["a.com", "x.a.com", "deep.x.a.com", "a.com/tr", "b.com/tr", "notb.com", "b.co"];
+  assert.deepEqual(findRedundantEntries(list), [
+    ["x.a.com", "a.com"],
+    ["deep.x.a.com", "x.a.com"], // nearest covering parent is reported
+    ["a.com/tr", "a.com"]
+  ]);
+});
+
+test("findRedundantEntries does not treat lookalike suffixes as parents", () => {
+  assert.deepEqual(findRedundantEntries(["ads.com", "badads.com", "x.ads.co"]), []);
 });
