@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EXPECTED_PERMISSIONS, buildPackage, checkManifest, collectFiles } from "../scripts/package.mjs";
+import { EXPECTED_PERMISSIONS, MIN_CHROME_VERSION, buildPackage, checkManifest, collectFiles } from "../scripts/package.mjs";
 import { createZip, crc32, readZip } from "../scripts/lib/zip.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,6 +84,17 @@ test("checkManifest enforces version format, version sync and store length limit
   assert.match(problems((m) => { m.description = "x".repeat(133); }), /133 chars; the store allows 132/);
   assert.match(problems((m) => { m.manifest_version = 2; }), /manifest_version must be 3/);
   assert.match(problems((m) => { delete m.icons["128"]; }), /128px icon/);
+});
+
+test("checkManifest requires a Chrome version that can lock storage.local", () => {
+  assert.equal(MIN_CHROME_VERSION, 140);
+  assert.match(problems((m) => { m.minimum_chrome_version = "102"; }), /minimum_chrome_version "102" must be >= 140/);
+  assert.match(problems((m) => { m.minimum_chrome_version = "139.0.7258.154"; }), /must be >= 140/);
+  assert.match(problems((m) => { delete m.minimum_chrome_version; }), /minimum_chrome_version "undefined"/);
+  assert.match(problems((m) => { m.minimum_chrome_version = 140; }), /must be >= 140/, "must be a string, as Chrome requires");
+  assert.match(problems((m) => { m.minimum_chrome_version = "latest"; }), /must be >= 140/);
+  assert.equal(problems((m) => { m.minimum_chrome_version = "140.0.7339.0"; }), "");
+  assert.equal(problems((m) => { m.minimum_chrome_version = "153"; }), "");
 });
 
 /* ------------------------------- file collection --------------------------- */

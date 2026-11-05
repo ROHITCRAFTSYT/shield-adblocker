@@ -34,6 +34,13 @@ const ROOT = resolve(__dirname, "..");
 // justification to docs/store-listing.md (the store's reviewers ask for one).
 export const EXPECTED_PERMISSIONS = Object.freeze(["activeTab", "declarativeNetRequest", "storage"]);
 
+// The service worker restricts chrome.storage.local to trusted contexts with
+// storage.local.setAccessLevel. Chromium only accepts that for `local` from
+// M140 (before, it rejects every area but `session`), so on an older browser
+// content scripts could still write the settings. Lowering this reopens that
+// hole; see docs/SECURITY.md.
+export const MIN_CHROME_VERSION = 140;
+
 // Chrome Web Store limits for the listing fields that come from the manifest.
 export const MAX_DESCRIPTION = 132;
 export const MAX_NAME = 75;
@@ -57,6 +64,12 @@ export function checkManifest(manifest, pkg) {
     errors.push(`version "${v}" must be 1-4 dot-separated integers (0-65535, no leading zeros)`);
   }
   if (pkg && v !== pkg.version) errors.push(`manifest version ${v} != package.json version ${pkg.version}`);
+
+  const minChrome = manifest.minimum_chrome_version;
+  const minMajor = typeof minChrome === "string" && /^\d+(\.\d+){0,3}$/.test(minChrome) ? Number(minChrome.split(".")[0]) : NaN;
+  if (!(minMajor >= MIN_CHROME_VERSION)) {
+    errors.push(`minimum_chrome_version "${minChrome}" must be >= ${MIN_CHROME_VERSION} (storage.local.setAccessLevel needs it)`);
+  }
 
   if (typeof manifest.name !== "string" || !manifest.name.trim()) errors.push("name is required");
   else if (manifest.name.length > MAX_NAME) errors.push(`name is ${manifest.name.length} chars; max ${MAX_NAME}`);

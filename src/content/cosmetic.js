@@ -3,12 +3,18 @@
  * Cosmetic ad filtering for the page (runs in the isolated content-script world).
  *
  * Design goals:
- *  - Stealth: inject CSS via a constructable stylesheet / <style> that we keep a
- *    handle to but do not advertise; set no extension-identifying globals or
- *    attributes on hidden nodes; collapse rather than violently remove nodes.
+ *  - No ad flash: the hiding CSS goes in synchronously at document_start,
+ *    before the page has parsed anything, and comes out again only if the
+ *    service worker says filtering is off or this site is allowlisted.
+ *  - Least privilege: this script cannot read or write chrome.storage (the
+ *    worker restricts storage.local to trusted contexts). It sends one
+ *    read-only query and gets back two booleans for its own site; it never
+ *    sees the allowlist and has no way to change settings.
+ *  - Stealth: inject CSS via a <style> that we keep a handle to but do not
+ *    advertise; set no extension-identifying globals or attributes on hidden
+ *    nodes; collapse rather than violently remove nodes.
  *  - Safety: selectors are static constants from selectors.js; nothing here is
  *    built from page-controlled strings, so there is no injection sink.
- *  - Correctness: respects the global on/off switch and the per-site allowlist.
  */
 (function () {
   "use strict";
@@ -16,29 +22,17 @@
   const sel = window.__sab_sel__;
   if (!sel) return; // selectors failed to load; fail closed (do nothing).
 
+  // Must equal COSMETIC_QUERY / COSMETIC_CHANGED in src/lib/policy.js. A
+  // content script cannot import modules; test/hosts-policy.test.mjs pins them.
+  const QUERY = "getCosmeticState";
+  const CHANGED = "cosmeticStateChanged";
+
   const host = (location.hostname || "").toLowerCase();
 
-  // The top-level site decides the allowlist, as it does for network rules:
-  // an ad iframe on an allowlisted page is not filtered either.
-  // location.ancestorOrigins is Chromium-only and readable cross-origin.
-  function topHost() {
-    try {
-      const anc = location.ancestorOrigins;
-      if (anc && anc.length) return new URL(anc[anc.length - 1]).hostname.toLowerCase();
-    } catch (_) {
-      /* opaque ("null") origin, e.g. sandboxed frame: fall through */
-    }
-    return host;
-  }
-  const siteHost = window === window.top ? host : topHost();
-
-  // Match a host against a registrable-domain key (suffix match, guarded so
-  // "evil-youtube.com" does not match "youtube.com").
-  function hostMatches(h, key) {
-    return h === key || h.endsWith("." + key);
-  }
+  // Match the frame's own host against a per-domain selector key (suffix
+  // match, guarded so "evil-youtube.com" does not match "youtube.com").
   function matchesDomainKey(key) {
-    return hostMatches(host, key);
+    return host === key || host.endsWith("." + key);
   }
 
   function buildSelectorList() {
@@ -63,14 +57,20 @@
       .join("\n");
   }
 
-  function applyHiding() {
-    if (styleEl && styleEl.isConnected) return;
-    const css = buildCss();
-    styleEl = document.createElement("style");
-    // textContent only — never innerHTML. Content is our own static CSS.
-    styleEl.textContent = css;
+  function attachStyle() {
+    // At document_start <head> does not exist yet, but <html> does: Chromium
+    // runs document_start scripts once the document element is created.
     const parent = document.head || document.documentElement;
-    if (parent) parent.appendChild(styleEl);
+    if (styleEl && !styleEl.isConnected && parent) parent.appendChild(styleEl);
+  }
+
+  function applyHiding() {
+    if (!styleEl) {
+      styleEl = document.createElement("style");
+      // textContent only — never innerHTML. Content is our own static CSS.
+      styleEl.textContent = buildCss();
+    }
+    attachStyle();
   }
 
   function removeHiding() {
@@ -80,34 +80,17 @@
     styleEl = null;
   }
 
-  // Decide whether to run, based on global enable flag + allowlist.
-  function shouldRun(state) {
-    if (!state || state.enabled === false) return false;
-    const allow = Array.isArray(state.allowlist) ? state.allowlist : [];
-    for (const d of allow) {
-      if (typeof d === "string" && hostMatches(siteHost, d)) return false;
-    }
-    return true;
-  }
-
   let observer = null;
 
   function startObserver() {
     if (observer) return;
     // A MutationObserver is only needed as a safety net; the CSS rule already
     // covers nodes added later. We keep it lightweight: re-attach our style if a
-    // site wipes <head> (some SPAs do), nothing more.
+    // site wipes <head> or replaces <html> (some SPAs do), nothing more.
     observer = new MutationObserver(function () {
-      if (styleEl && !styleEl.isConnected) {
-        const parent = document.head || document.documentElement;
-        if (parent) parent.appendChild(styleEl);
-      }
+      if (styleEl && !styleEl.isConnected) attachStyle();
     });
-    try {
-      observer.observe(document.documentElement, { childList: true, subtree: true });
-    } catch (_) {
-      /* documentElement not ready yet; will retry on next init tick */
-    }
+    observer.observe(document, { childList: true, subtree: true });
   }
 
   function stopObserver() {
@@ -117,39 +100,71 @@
     }
   }
 
-  function refresh(state) {
-    if (shouldRun(state)) {
-      applyHiding();
-      startObserver();
-    } else {
-      stopObserver();
-      removeHiding();
-    }
+  function hide() {
+    applyHiding();
+    startObserver();
   }
 
-  // Pull state from the background/service worker via storage (no message round
-  // trip needed for read; storage is synchronous-enough and avoids exposing a
-  // message listener that a page could try to reach).
-  function loadStateAndApply() {
+  function unhide() {
+    stopObserver();
+    removeHiding();
+  }
+
+  // Ask the worker whether to filter this page. Queries are numbered and only
+  // the reply to the latest one is applied, so a slow reply can never
+  // overwrite a newer one. Anything other than a well-formed reply (worker
+  // error, extension reloaded) leaves the current state alone, which on first
+  // load means filtering stays on.
+  let latest = 0;
+  function query() {
+    const n = ++latest;
+    let pending;
     try {
-      chrome.storage.local.get({ enabled: true, allowlist: [] }, function (state) {
-        if (chrome.runtime.lastError) return; // context invalidated; ignore.
-        refresh(state);
-      });
+      pending = chrome.runtime.sendMessage({ action: QUERY });
     } catch (_) {
-      // Extension context gone (e.g. during reload). Fail safe: do nothing.
+      return; // extension context invalidated (reload/update): keep state.
     }
+    pending.then(
+      function (reply) {
+        if (n !== latest) return;
+        if (!reply || typeof reply.enabled !== "boolean" || typeof reply.allowlisted !== "boolean") return;
+        if (reply.enabled && !reply.allowlisted) hide();
+        else unhide();
+      },
+      function () {
+        /* no answer: keep the current state */
+      }
+    );
   }
 
-  // React to live changes from the popup.
+  // Live updates: when settings change, the worker pings every tab. The ping
+  // carries no state, so this only ever triggers a fresh query.
   try {
-    chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area !== "local") return;
-      if (changes.enabled || changes.allowlist) loadStateAndApply();
+    chrome.runtime.onMessage.addListener(function (message, sender) {
+      if (!sender || sender.id !== chrome.runtime.id) return;
+      if (message && message.action === CHANGED) query();
     });
   } catch (_) {
     /* ignore */
   }
 
-  loadStateAndApply();
+  // A page restored from the back/forward cache keeps this script's state
+  // from before it was cached, and misses pings sent meanwhile: ask again.
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) query();
+  });
+
+  // Optimistic: hide now, ask afterwards. The common case (filtering on, site
+  // not allowlisted) never shows an ad; an allowlisted or switched-off page
+  // shows its ad slots once the reply arrives.
+  hide();
+
+  // A prerendered page is not the tab's page yet, so the worker would judge
+  // it by the wrong URL. Ask when it is activated (and not at all if it never
+  // is).
+  if (document.prerendering) {
+    document.addEventListener("prerenderingchange", query, { once: true });
+  } else {
+    query();
+  }
 })();

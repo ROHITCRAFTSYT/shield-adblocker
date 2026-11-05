@@ -13,14 +13,23 @@ import {
   sanitizeAllowlist,
   sanitizeHost
 } from "../src/lib/hosts.js";
+import { readFileSync } from "node:fs";
+
 import {
   ALLOW_RULE_ID,
   ALLOW_RULE_PRIORITY,
+  COSMETIC_CHANGED,
+  COSMETIC_QUERY,
   buildAllowRules,
+  cosmeticSiteHost,
+  cosmeticStateFor,
   countBlocked,
+  isContentScriptSender,
+  isCosmeticQuery,
   isTrustedSender,
   normalizeState,
-  planCommand
+  planCommand,
+  routeMessage
 } from "../src/lib/policy.js";
 import { validateRuleset } from "../scripts/lib/dnr.mjs";
 
@@ -168,4 +177,107 @@ test("planCommand: unknown actions and non-objects are rejected", () => {
   assert.throws(() => planCommand({ action: "__proto__" }, S()), /unknown action/);
   assert.throws(() => planCommand({ action: "eval" }, S()), /unknown action/);
   assert.throws(() => planCommand(null, S()), /bad message/);
+});
+
+/* ------------------------ content scripts: read-only ----------------------- */
+
+// Senders as Chromium builds them for a content script (the shape the e2e
+// probe recorded): our id, the frame's URL, frameId, and the tab.
+const CS_TOP = { id: RID, url: "https://news.example.com/a", origin: "https://news.example.com", frameId: 0, tab: { id: 7, url: "https://news.example.com/a" } };
+const CS_IFRAME = { id: RID, url: "https://ads.adnet.test/slot", origin: "https://ads.adnet.test", frameId: 12, tab: { id: 7, url: "https://news.example.com/a" } };
+const Q = { action: COSMETIC_QUERY };
+
+test("isContentScriptSender: our id from a web page; never one of our own pages", () => {
+  assert.equal(isContentScriptSender(CS_TOP, RID, EXT), true);
+  assert.equal(isContentScriptSender(CS_IFRAME, RID, EXT), true);
+  // The popup and options page are trusted pages, not content scripts.
+  assert.equal(isContentScriptSender({ id: RID, url: EXT + "src/popup/popup.html" }, RID, EXT), false);
+  assert.equal(isContentScriptSender({ id: RID, url: EXT + "src/options/options.html", tab: { id: 5 } }, RID, EXT), false);
+  // Another extension's content script, or no URL at all.
+  assert.equal(isContentScriptSender({ ...CS_TOP, id: "other" }, RID, EXT), false);
+  assert.equal(isContentScriptSender({ id: RID, frameId: 0 }, RID, EXT), false);
+  assert.equal(isContentScriptSender(undefined, RID, EXT), false);
+});
+
+test("isCosmeticQuery accepts exactly { action: 'getCosmeticState' }", () => {
+  assert.equal(isCosmeticQuery({ action: "getCosmeticState" }), true);
+  // Any extra field is rejected: the content script has nothing to say. In
+  // particular it cannot nominate the host it wants an answer for.
+  assert.equal(isCosmeticQuery({ action: COSMETIC_QUERY, host: "bank.test" }), false);
+  assert.equal(isCosmeticQuery({ action: COSMETIC_QUERY, top: "https://bank.test" }), false);
+  assert.equal(isCosmeticQuery({ action: COSMETIC_QUERY, value: false }), false);
+  for (const bad of [null, undefined, "getCosmeticState", 1, [], [COSMETIC_QUERY], {}, { action: "getState" }, { action: "setEnabled", value: false }]) {
+    assert.equal(isCosmeticQuery(bad), false, JSON.stringify(bad));
+  }
+});
+
+test("routeMessage: content scripts reach only the read-only query, never a command", () => {
+  assert.equal(routeMessage(Q, CS_TOP, RID, EXT), "cosmeticQuery");
+  assert.equal(routeMessage(Q, CS_IFRAME, RID, EXT), "cosmeticQuery");
+  // Every mutating command, and the full-state read, is dropped for content scripts.
+  for (const msg of [
+    { action: "setEnabled", value: false },
+    { action: "setAllowed", host: "evil.test", value: true },
+    { action: "setAllowlist", value: ["evil.test"] },
+    { action: "getState" },
+    { action: COSMETIC_QUERY, value: false },
+    null
+  ]) {
+    assert.equal(routeMessage(msg, CS_TOP, RID, EXT), null, JSON.stringify(msg));
+  }
+});
+
+test("routeMessage: our pages keep the command path; strangers get nothing", () => {
+  const popup = { id: RID, url: EXT + "src/popup/popup.html" };
+  assert.equal(routeMessage({ action: "setEnabled", value: false }, popup, RID, EXT), "command");
+  // A page sending the content-script query goes to planCommand, which
+  // rejects it as an unknown action; it is not answered as a content script.
+  assert.equal(routeMessage(Q, popup, RID, EXT), "command");
+  assert.throws(() => planCommand(Q, S()), /unknown action/);
+  assert.equal(routeMessage({ action: 1 }, popup, RID, EXT), null);
+  assert.equal(routeMessage(Q, { ...CS_TOP, id: "other" }, RID, EXT), null);
+  assert.equal(routeMessage(Q, { id: "other", url: "chrome-extension://other/p.html" }, RID, EXT), null);
+  assert.equal(routeMessage(Q, undefined, RID, EXT), null);
+});
+
+test("cosmeticSiteHost uses browser-set fields: frame URL on top, tab URL in iframes", () => {
+  assert.equal(cosmeticSiteHost(CS_TOP), "news.example.com");
+  // An ad iframe is judged by the page it is on, as the network allowlist is.
+  assert.equal(cosmeticSiteHost(CS_IFRAME), "news.example.com");
+  // An iframe with no tab URL: the site is unknown, never its own host.
+  assert.equal(cosmeticSiteHost({ ...CS_IFRAME, tab: { id: 7 } }), null);
+  assert.equal(cosmeticSiteHost({ ...CS_IFRAME, tab: undefined }), null);
+  assert.equal(cosmeticSiteHost({ ...CS_IFRAME, frameId: undefined }), "news.example.com", "non-zero/absent frameId = iframe");
+  // In the top frame the frame's URL wins even if the tab URL differs.
+  assert.equal(cosmeticSiteHost({ ...CS_TOP, tab: { id: 7, url: "https://other.test/" } }), "news.example.com");
+  assert.equal(cosmeticSiteHost({ ...CS_TOP, url: "https://www.Example.COM/x" }), "example.com");
+  assert.equal(cosmeticSiteHost({ ...CS_TOP, url: "file:///etc/passwd" }), null);
+  assert.equal(cosmeticSiteHost({ frameId: 0 }), null);
+  assert.equal(cosmeticSiteHost(undefined), null);
+});
+
+test("cosmeticStateFor answers two booleans about the sender's own site, nothing else", () => {
+  const state = S(["example.com", "other.org"]);
+  const top = cosmeticStateFor(CS_TOP, state);
+  assert.deepEqual(top, { enabled: true, allowlisted: true }, "subdomain of an entry");
+  assert.deepEqual(Object.keys(top).sort(), ["allowlisted", "enabled"], "the allowlist is never sent");
+  assert.deepEqual(cosmeticStateFor(CS_IFRAME, state), { enabled: true, allowlisted: true }, "iframe follows the page");
+  assert.deepEqual(cosmeticStateFor({ ...CS_TOP, url: "https://evil-example.com/" }, state), { enabled: true, allowlisted: false });
+  assert.deepEqual(cosmeticStateFor(CS_TOP, S(["example.com"], false)), { enabled: false, allowlisted: true });
+  // An ad host that happens to be allowlisted does not unfilter the page it is on,
+  // even when the tab URL is missing (fail closed).
+  assert.deepEqual(cosmeticStateFor(CS_IFRAME, S(["adnet.test"])), { enabled: true, allowlisted: false });
+  assert.deepEqual(cosmeticStateFor({ ...CS_IFRAME, tab: { id: 7 } }, S(["adnet.test", "example.com"])), { enabled: true, allowlisted: false });
+  // IP literals and non-web URLs can never be allowlisted (as in the popup).
+  assert.deepEqual(cosmeticStateFor({ ...CS_TOP, url: "http://192.168.1.1/" }, state), { enabled: true, allowlisted: false });
+  assert.deepEqual(cosmeticStateFor({ frameId: 0 }, state), { enabled: true, allowlisted: false });
+});
+
+test("cosmetic.js uses the same message names as the worker", () => {
+  // Content scripts cannot import modules, so the strings are duplicated.
+  const src = readFileSync(new URL("../src/content/cosmetic.js", import.meta.url), "utf8");
+  assert.match(src, new RegExp(`const QUERY = "${COSMETIC_QUERY}";`));
+  assert.match(src, new RegExp(`const CHANGED = "${COSMETIC_CHANGED}";`));
+  // And it no longer touches chrome.storage at all.
+  assert.doesNotMatch(src, /chrome\.storage\.(local|sync|session|managed|onChanged)\b/);
 });
