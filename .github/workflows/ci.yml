@@ -1,41 +1,112 @@
-name: lint
+name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: "20"
+          node-version: "24"
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies (lockfile only)
+        run: npm ci
 
-      - name: Validate blocklist (JSON valid + in sync with source)
+      - name: Validate blocklist (DNR schema, project policy, in sync with source)
         run: npm run lint:json
 
       - name: Lint JavaScript (eslint)
         run: npm run lint:js
 
-      - name: Unit tests (node --test)
-        run: npm test
-
       - name: Verify rules are committed in built form
         run: |
           npm run build:rules
           git diff --exit-code rules/network-rules.json \
-            || (echo "::error::network-rules.json is stale — run 'npm run build:rules' and commit" && exit 1)
+            || (echo "::error::network-rules.json is stale; run 'npm run build:rules' and commit" && exit 1)
+
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies (lockfile only)
+        run: npm ci
+
+      - name: Unit tests (node --test)
+        run: npm test
+
+  package:
+    name: package + e2e
+    needs: [lint, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "24"
+
+      - name: Install dependencies (lockfile only)
+        run: npm ci
+
+      - name: Build store package
+        run: npm run package
+
+      - name: Verify the archive with an independent tool
+        run: |
+          unzip -t dist/*.zip
+          unzip -l dist/*.zip
+          (cd dist && sha256sum -c ./*.sha256)
+
+      - name: Install Chromium for the end-to-end test
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end test against the packaged zip
+        run: npm run test:e2e
+
+      - name: Upload store package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: shield-adblocker-zip
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14

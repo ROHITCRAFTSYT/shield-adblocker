@@ -8,12 +8,16 @@ desktop.ini
 # Claude / tooling
 .claude/
 
-# Packaged builds
+# Chromium writes indexed DNR rulesets here when the repo is loaded unpacked
+_metadata/
+
+# Packaged builds (npm run package)
+dist/
 *.zip
 *.crx
 *.pem
 
-# Node (only if tooling is added later)
+# Node tooling
 node_modules/
 npm-debug.log*
 
