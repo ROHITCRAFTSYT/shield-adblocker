@@ -14,7 +14,8 @@
  * Set E2E_SCREENSHOTS=<dir> to save screenshots of the options page.
  *
  * Test pages are served from 127.0.0.1 under the names site.test and
- * other.test (via --host-resolver-rules); nothing touches the real network.
+ * other.test. --host-resolver-rules maps those and makes every other host
+ * unresolvable, so nothing touches the real network.
  */
 import { chromium } from "playwright";
 import http from "node:http";
@@ -73,7 +74,10 @@ const check = (name, ok, detail = "") => { results.push({ name, ok, detail }); c
       `--disable-extensions-except=${EXT}`,
       `--load-extension=${EXT}`,
       "--no-proxy-server",
-      "--host-resolver-rules=MAP site.test 127.0.0.1, MAP other.test 127.0.0.1"
+      // Every other host fails to resolve, so the test is hermetic: a request
+      // the extension lets through ends in ERR_NAME_NOT_RESOLVED instead of
+      // reaching a real ad server.
+      "--host-resolver-rules=MAP site.test 127.0.0.1, MAP other.test 127.0.0.1, MAP * ~NOTFOUND"
     ]
   });
   const errors = [];
