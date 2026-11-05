@@ -9,8 +9,9 @@ The extension itself needs no build — load the repo as an unpacked extension
 after each change. Tooling (rule generation + lint) uses Node:
 
 ```bash
-npm install     # installs eslint (dev only; not shipped in the extension)
-npm run lint    # what CI runs: validate blocklist + eslint
+npm ci            # dev tools only (eslint, playwright); nothing is bundled
+npm run check     # lint + unit tests + package (what CI runs, minus e2e)
+npm run test:e2e  # load the packaged zip in Chromium (needs: npx playwright install chromium)
 ```
 
 ## Adding network blocking rules
@@ -28,7 +29,15 @@ The blocklist is **generated** — do not edit `rules/network-rules.json` by han
    ```
 
 Each domain compiles to a `"||domain^"` rule with `"domainType": "thirdParty"`.
-CI rejects PRs where `network-rules.json` is out of sync with the source list.
+CI rejects a PR when:
+
+- `network-rules.json` is out of sync with the source list;
+- a rule breaks Chrome's DNR schema;
+- an entry is already covered by a broader one (`x.a.com` next to `a.com`).
+
+Check that your entry matches the endpoint the tracker really uses. Add that
+URL to `MUST_BLOCK` in `test/dnr-match.test.mjs`. `bing.com/bat` shipped in
+1.0.0 and never blocked anything: Microsoft's tag loads from `bat.bing.com`.
 
 ## Adding cosmetic selectors
 
@@ -44,7 +53,9 @@ Edit [`src/content/selectors.js`](src/content/selectors.js):
 - **No remote code, no network calls, no `eval`, no `innerHTML` of dynamic
   data.** PRs that add any of these will be rejected. See
   [docs/SECURITY.md](docs/SECURITY.md).
-- Keep permissions minimal — adding a permission needs a clear justification.
+- Keep permissions minimal. A new permission needs a clear justification. It
+  must also be added to `EXPECTED_PERMISSIONS` in `scripts/package.mjs` and
+  justified in `docs/store-listing.md`, or the build fails.
 - Test that common sites (news, video, social) still work and aren't visually
   broken before submitting.
 

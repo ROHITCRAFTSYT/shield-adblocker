@@ -1,7 +1,9 @@
 # Installing Shield AdBlocker (unpacked)
 
-Shield AdBlocker is distributed as an unpacked extension. There is no build
-step — the source *is* the extension.
+Until it is published to a store, Shield AdBlocker installs as an unpacked
+extension. There is no build step: the repository root *is* the extension.
+To install the exact store build instead, run `npm run package` and unzip
+`dist/shield-adblocker-<version>.zip` into a folder, then load that folder.
 
 ## Chrome / Brave / Opera
 
@@ -23,9 +25,11 @@ step — the source *is* the extension.
 1. Visit an ad-heavy news site.
 2. Open **DevTools → Network**, reload, and filter by `doubleclick` or
    `googlesyndication` — those requests should show as **blocked**.
-3. Click the 🛡️ icon — the **blocked on this page** counter should be non-zero.
-4. Toggle **Allow this site**, reload, and confirm ads/requests return; toggle it
-   back off to resume blocking.
+3. Click the toolbar icon. The **blocked · this page** counter should be
+   non-zero.
+4. Turn on **Allow this site** and press **Reload** in the popup. The ad
+   requests return. Turn it off and reload again to resume blocking.
+5. Open **settings →** in the popup to manage the allowlist.
 
 ## Updating
 
@@ -36,7 +40,11 @@ Pull the latest changes, then return to the extensions page and click the
 
 - **"Manifest version 2 is deprecated" or load errors** — make sure you selected
   the folder containing `manifest.json`, not a parent or subfolder.
-- **Counter shows "—"** — some pages (browser internal pages, the new-tab page,
-  the Chrome Web Store) cannot be filtered; this is expected.
+- **Counter shows "—"**: some pages (browser internal pages, the new-tab page,
+  the Chrome Web Store) can't be filtered. This is expected. Chrome also limits
+  how often the count can be read, about 20 times per 10 minutes, so it may
+  briefly show "—" after many popup opens.
+- **"Allow this site" is greyed out**: the page is an IP address or
+  `localhost`. Those can't be allowlisted.
 - **A site breaks** — use **Allow this site** to pause blocking there, and
   consider opening an issue with the domain.
