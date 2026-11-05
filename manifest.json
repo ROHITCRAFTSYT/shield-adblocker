@@ -5,7 +5,7 @@
   "description": "Blocks ads and trackers before they load and hides leftover ad slots. No data collection, no remote code.",
   "author": "ROHITCRAFTSYT",
   "homepage_url": "https://github.com/ROHITCRAFTSYT/shield-adblocker",
-  "minimum_chrome_version": "102",
+  "minimum_chrome_version": "140",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

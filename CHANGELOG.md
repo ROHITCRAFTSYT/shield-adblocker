@@ -42,6 +42,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The service worker is an ES module. Its logic is in `src/lib/`, shared
   with the pages and unit-tested.
 - Node 22+ for tooling. CI previously ran on Node 20, which is end-of-life.
+- **Requires Chrome 140** (`minimum_chrome_version` was 102). Chromium 140
+  is the first version where `storage.local.setAccessLevel` works; before
+  that it only accepted `session`. `npm run package` refuses a lower value.
+- The cosmetic content script no longer reads `chrome.storage`. It hides at
+  `document_start`, asks the worker with a read-only `getCosmeticState`
+  message, and un-hides if filtering is off or the site is allowlisted.
+  Open tabs update live from a ping the worker sends on every settings
+  change, and pages restored from the back/forward cache ask again.
 
 ### Fixed
 - **Allowlisting missed requests made inside third-party iframes** on the
@@ -61,7 +69,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **One invalid cosmetic selector disabled all cosmetic filtering**: the
   selectors shared one CSS rule. There is now one rule per selector.
 - Iframes on an allowlisted site were still cosmetically filtered. The
-  content script now decides by the top-level site.
+  worker now decides by the top-level site (the tab's URL).
+- **Ads could flash at page load**: the hiding CSS waited for an
+  asynchronous storage read, and the page could render an ad before it
+  arrived. The CSS now goes in synchronously at `document_start`.
 
 ### Security
 - The message sender check is now an exact `chrome-extension://<id>/` prefix
@@ -69,9 +80,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   options page.
 - ESLint forbids `innerHTML`, `outerHTML`, `insertAdjacentHTML` and
   `document.write`.
-- SECURITY.md corrected. Content scripts *can* write `chrome.storage.local`
-  (Chromium's default), so the claim that a compromised content script
-  couldn't change state was wrong. Documented as a residual risk.
+- **Content scripts can no longer read or change the settings.** By
+  Chromium's default, content scripts can read and write
+  `chrome.storage.local`, so a compromised content script could switch
+  blocking off or allowlist sites without going through the validated message
+  handler. 1.0.0's SECURITY.md wrongly said it couldn't. The worker now
+  restricts `storage.local` to trusted contexts on every start. Content
+  scripts get one read-only message, answered from browser-set sender fields
+  with `{ enabled, allowlisted }` for their own site; every other message
+  from them is dropped. The e2e test checks this from the content script's
+  own isolated world.
 
 ## [1.0.0] — 2026-06-20
 

@@ -34,6 +34,9 @@ privacy and stealth, and it keeps working under MV3.
 
 An ES-module service worker (`"type": "module"`). MV3 workers are ephemeral,
 so it rebuilds runtime state from `chrome.storage.local` on every wake-up.
+Before anything else on each start, it restricts `storage.local` to trusted
+contexts (`setAccessLevel`, Chrome 140+), so only the worker and the
+extension's own pages can read or write the settings.
 The decision logic lives in `src/lib/policy.js` and `src/lib/hosts.js`: pure
 functions, unit-tested under Node, and shared with the popup and options page.
 
@@ -60,7 +63,12 @@ functions, unit-tested under Node, and shared with the popup and options page.
   can fire together. Reconciles run one after another, and each re-reads
   storage, so a slow pass can never overwrite a newer state.
 - **Messaging**: `getState`, `setEnabled`, `setAllowed`, `setAllowlist` from
-  the extension's own pages only (see [SECURITY.md](SECURITY.md)).
+  the extension's own pages only. Content scripts get exactly one read-only
+  message, `getCosmeticState`, answered with `{ enabled, allowlisted }` for
+  the sender's top-level site (see [SECURITY.md](SECURITY.md)).
+- **Live cosmetic updates**: on a settings change the worker sends every
+  open tab an empty `cosmeticStateChanged` ping (`tabs.query({})` gives ids
+  without the `tabs` permission), and each frame asks again.
 
 Static rules use ids `1..N`; the allowlist rule uses `1000000`.
 
@@ -72,17 +80,27 @@ an obvious page-readable global.
 
 `cosmetic.js`:
 
-1. Reads `enabled` + `allowlist` from `chrome.storage.local`.
-2. Decides by the **top-level** site, using `location.ancestorOrigins` inside
-   iframes, the same way the network allowlist does.
-3. If active, builds one CSS rule **per selector** and injects a `<style>`
-   element (`textContent`, never `innerHTML`). With one rule per selector, a
-   selector the browser can't parse drops only itself. In a combined selector
-   list it would invalidate every selector.
-4. Hidden elements are **collapsed** (`display: none`) rather than removed.
-5. A lightweight `MutationObserver` only re-attaches the style if a SPA wipes
-   `<head>` — the CSS rule itself already covers dynamically inserted ads.
-6. Subscribes to `chrome.storage.onChanged` so popup changes apply live.
+1. At `document_start`, before the page has parsed anything, builds one CSS
+   rule **per selector** and injects a `<style>` element (`textContent`,
+   never `innerHTML`). This is optimistic, so ads never flash. With one rule
+   per selector, a selector the browser can't parse drops only itself. In a
+   combined selector list it would invalidate every selector.
+2. Sends `{ action: "getCosmeticState" }` to the worker, which decides by the
+   **top-level** site (the tab's URL for iframes), the same way the network
+   allowlist does. If the answer is `enabled: false` or `allowlisted: true`,
+   the style is removed. On an allowlisted page the ad slots therefore show
+   up about 25–60 ms after navigation starts (measured headless).
+   Prerendered pages ask when they are activated.
+3. Hidden elements are **collapsed** (`display: none`) rather than removed.
+4. A lightweight `MutationObserver` only re-attaches the style if a SPA wipes
+   `<head>` or replaces `<html>`. The CSS rule itself already covers
+   dynamically inserted ads.
+5. Asks again when the worker's `cosmeticStateChanged` ping arrives, so
+   popup and settings changes apply to open tabs live, and when a page is
+   restored from the back/forward cache.
+
+It never touches `chrome.storage`; it cannot, because the worker restricts
+`storage.local` to trusted contexts.
 
 The content script runs at `document_start` in `all_frames`, in the **isolated
 world**, so the page's own scripts cannot read or tamper with its variables.
@@ -90,18 +108,20 @@ world**, so the page's own scripts cannot read or tamper with its variables.
 ## Data flow
 
 ```
-popup.js / options.js ──sendMessage──▶ background.js ──▶ chrome.storage.local
-                                │                   │
-                                ▼                   ▼ onChanged
-                  declarativeNetRequest      content/cosmetic.js
-                  (enable rulesets,           (apply/clear CSS)
-                   session allow rules)
+popup.js / options.js ──commands──▶ background.js ◀──▶ chrome.storage.local
+                                     │         ▲ │      (trusted contexts only)
+                                     ▼         │ │
+                       declarativeNetRequest   │ │  ▲ getCosmeticState → { enabled, allowlisted }
+                       (rulesets, allow rule)  │ │  ▼ "cosmeticStateChanged" ping on a change
+                                               │ ▼
+                                        content/cosmetic.js
+                                        (CSS on at start; off if told)
 ```
 
 ## State shape
 
 ```js
-// chrome.storage.local
+// chrome.storage.local (trusted contexts only: worker, popup, options page)
 {
   enabled: true,            // global on/off
   allowlist: ["example.com"] // sanitised registrable hosts
@@ -117,5 +137,5 @@ popup.js / options.js ──sendMessage──▶ background.js ──▶ chrome.
 | `scripts/lib/dnr.mjs` | Offline model of DNR: validator, plus a `urlFilter` matcher with Chrome's action precedence. It follows Chromium's `indexed_rule.cc` and the DNR API definition. |
 | `scripts/package.mjs` | Store ZIP: manifest/permission/CSP gates, reachability-based file list, deterministic archive + SHA-256 |
 | `scripts/lib/zip.mjs` | Dependency-free deterministic ZIP writer/reader |
-| `e2e/extension.e2e.mjs` | Loads the packaged ZIP into Chromium and checks blocking, hiding, allowlist, master switch and permissions |
+| `e2e/extension.e2e.mjs` | Loads the packaged ZIP into Chromium and checks blocking, hiding (no flash, iframes), allowlist, master switch, live updates, permissions, and that the content-script world cannot read or change settings |
 | `scripts/store-assets.mjs` | Regenerates the store screenshots and promo tile from the real UI |

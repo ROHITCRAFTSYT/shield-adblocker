@@ -4,7 +4,7 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-4ff0a3.svg)](LICENSE)
 
 A small, private **Manifest V3** ad and tracker blocker for Chromium browsers
-(Chrome, Edge, Brave, Opera). It blocks ad and tracker requests at the
+(Chrome, Edge, Brave, Opera; version 140 or newer). It blocks ad and tracker requests at the
 **network layer** with `declarativeNetRequest` and hides the empty slots they
 leave behind with **cosmetic filtering**. It uses three permissions, runs no
 remote code, and collects no data.

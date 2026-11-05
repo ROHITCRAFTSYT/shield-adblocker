@@ -5,6 +5,11 @@ extension. There is no build step: the repository root *is* the extension.
 To install the exact store build instead, run `npm run package` and unzip
 `dist/shield-adblocker-<version>.zip` into a folder, then load that folder.
 
+**Requires Chrome 140 or newer**, or a browser built on Chromium 140 or newer.
+Older versions refuse to load it. Chromium 140 is the first version that lets
+an extension lock its saved settings away from content scripts
+(`storage.local.setAccessLevel`); see [SECURITY.md](SECURITY.md).
+
 ## Chrome / Brave / Opera
 
 1. Go to `chrome://extensions`.
