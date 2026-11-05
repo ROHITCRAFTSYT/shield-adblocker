@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shield AdBlocker · Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body data-state="on">
+  <div class="grain" aria-hidden="true"></div>
+  <a class="skip" href="#main">Skip to settings</a>
+
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">◇</span>
+        <span class="word">SHIELD</span>
+        <span class="ver" id="ver"></span>
+      </div>
+      <div class="conn" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="conn-txt" id="status">loading…</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <h1 class="title">Settings</h1>
+
+    <!-- 01 · Protection -->
+    <section class="panel" aria-labelledby="h-protect">
+      <h2 class="eyebrow" id="h-protect"><span class="idx">01</span> Protection</h2>
+
+      <label class="ctl">
+        <span class="ctl-meta">
+          <span class="ctl-title">Master shield</span>
+          <span class="ctl-sub" id="globalSub">Network + cosmetic filtering on every site</span>
+        </span>
+        <span class="sw">
+          <input type="checkbox" id="globalToggle" role="switch" />
+          <span class="sw-track"><span class="sw-knob"></span></span>
+        </span>
+      </label>
+
+      <dl class="stats">
+        <div class="stat">
+          <dt>Rules armed</dt>
+          <dd id="ruleCount">—</dd>
+        </div>
+        <div class="stat">
+          <dt>Allowlisted sites</dt>
+          <dd id="allowCount">—</dd>
+        </div>
+        <div class="stat">
+          <dt>Data collected</dt>
+          <dd>none</dd>
+        </div>
+      </dl>
+    </section>
+
+    <!-- 02 · Allowlist -->
+    <section class="panel" aria-labelledby="h-allow">
+      <h2 class="eyebrow" id="h-allow"><span class="idx">02</span> Allowlist</h2>
+      <p class="lede">
+        Blocking is paused on these sites and all their subdomains. Changes take
+        effect the next time a page loads.
+      </p>
+
+      <form class="add" id="addForm" novalidate>
+        <label class="sr-only" for="addInput">Site to allowlist</label>
+        <input id="addInput" type="text" inputmode="url" autocomplete="off"
+               autocapitalize="off" spellcheck="false"
+               placeholder="example.com or paste a page URL"
+               aria-describedby="addMsg" />
+        <button type="submit" class="btn">Add site</button>
+      </form>
+      <p class="msg" id="addMsg" role="status" aria-live="polite"></p>
+
+      <div class="list-tools" id="listTools" hidden>
+        <label class="sr-only" for="filter">Filter allowlist</label>
+        <input id="filter" type="search" placeholder="Filter…" autocomplete="off" spellcheck="false" />
+        <span class="list-count" id="filterCount"></span>
+      </div>
+
+      <ul class="list" id="allowList" aria-label="Allowlisted sites"></ul>
+      <p class="empty" id="emptyState">No sites allowlisted. Shield is blocking everywhere.</p>
+
+      <div class="row-actions" id="rowActions" hidden>
+        <button type="button" class="btn ghost danger" id="clearBtn">Clear all</button>
+      </div>
+
+      <details class="bulk" id="bulk">
+        <summary>Bulk edit · import / export</summary>
+        <p class="lede">
+          One site per line. Paste a list to import, or copy this one to move it
+          to another browser. Saving replaces the whole allowlist.
+        </p>
+        <label class="sr-only" for="bulkText">Allowlist, one site per line</label>
+        <textarea id="bulkText" rows="8" spellcheck="false" autocapitalize="off"></textarea>
+        <div class="bulk-actions">
+          <button type="button" class="btn" id="bulkSave">Save list</button>
+          <button type="button" class="btn ghost" id="bulkRevert">Revert</button>
+        </div>
+        <p class="msg" id="bulkMsg" role="status" aria-live="polite"></p>
+      </details>
+    </section>
+
+    <!-- 03 · About -->
+    <section class="panel" aria-labelledby="h-about">
+      <h2 class="eyebrow" id="h-about"><span class="idx">03</span> About</h2>
+      <ul class="facts">
+        <li><span class="tick" aria-hidden="true">▌</span>No telemetry, no analytics, no remote code. Your settings never leave this browser.</li>
+        <li><span class="tick" aria-hidden="true">▌</span>Filter rules ship inside the extension and change only when the extension updates.</li>
+        <li><span class="tick" aria-hidden="true">▌</span>Network rules stop ad and tracker requests before they load; cosmetic filtering hides the empty slots they leave behind.</li>
+      </ul>
+      <p class="links">
+        <a href="https://github.com/ROHITCRAFTSYT/shield-adblocker" target="_blank" rel="noopener noreferrer">Source code</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://github.com/ROHITCRAFTSYT/shield-adblocker/blob/main/PRIVACY.md" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://github.com/ROHITCRAFTSYT/shield-adblocker/issues/new" target="_blank" rel="noopener noreferrer">Report a broken site</a>
+      </p>
+    </section>
+  </main>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
