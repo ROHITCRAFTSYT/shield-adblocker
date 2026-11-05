@@ -109,7 +109,7 @@ The blocklist is generated. Edit [`rules/ad-domains.txt`](rules/ad-domains.txt)
 (one domain per line, optionally with a path such as `facebook.com/tr`), then:
 
 ```bash
-npm run build:rules    # regenerate rules/network-rules.json
+npm run build:rules    # regenerate rules/network-rules.json and the rule count in the docs
 npm run lint:json      # validate
 ```
 
@@ -119,6 +119,9 @@ npm run lint:json      # validate
 - a rule breaks the project policy: third-party `||domain^` block rules at priority 1.
 - the JSON is out of sync with the source list.
 - an entry is already covered by a broader one.
+- the rule count quoted in this README or in the store listing is stale.
+  Write the count as "N well-known ad and tracker …" so `build:rules` can
+  find and update it.
 
 The tests in [`test/dnr-match.test.mjs`](test/dnr-match.test.mjs) list real
 tracker URLs that must stay blocked and ordinary URLs that must stay
