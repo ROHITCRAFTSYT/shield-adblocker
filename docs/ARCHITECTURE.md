@@ -30,22 +30,39 @@ The original tutorial used MV2 `webRequest`, which Chrome is removing.
 declaratively, so the extension never sees request contents — better for both
 privacy and stealth, and it keeps working under MV3.
 
-## 2. Service worker — `src/background.js`
+## 2. Service worker: `src/background.js`
 
-Stateless across restarts (MV3 workers are ephemeral), so it rebuilds runtime
-state from `chrome.storage.local` on every wake-up. Responsibilities:
+An ES-module service worker (`"type": "module"`). MV3 workers are ephemeral,
+so it rebuilds runtime state from `chrome.storage.local` on every wake-up.
+The decision logic lives in `src/lib/policy.js` and `src/lib/hosts.js`: pure
+functions, unit-tested under Node, and shared with the popup and options page.
 
-- **Global toggle**: `updateEnabledRulesets` enables/disables the static
+- **Global toggle**: `updateEnabledRulesets` enables or disables the static
   blocklist based on the persisted `enabled` flag.
-- **Allowlist → allow rules**: each allowlisted host becomes a high-priority
-  **session** rule with `action: "allow"` and `condition.initiatorDomains`,
-  so every request from that top-level site is permitted. Session rules are
-  cleared on browser restart and rebuilt from storage via `onStartup`.
-- **Messaging**: handles `getState`, `setEnabled`, `setAllowed` from the popup,
-  with strict sender + input validation (see [SECURITY.md](SECURITY.md)).
+- **Allowlist → one allow rule**: the whole allowlist becomes a single
+  session rule:
 
-Reserved id ranges keep the two rule kinds from colliding: static rules use
-`1..N`; session allow rules start at `1000000`.
+  ```json
+  { "id": 1000000, "priority": 100,
+    "action": { "type": "allowAllRequests" },
+    "condition": { "requestDomains": ["example.com", "..."], "resourceTypes": ["main_frame"] } }
+  ```
+
+  When the tab navigates to an allowlisted site (or a subdomain of one),
+  every request in that tab's frame tree is allowed, including requests from
+  third-party ad iframes. An `allow` rule keyed on `initiatorDomains`, as in
+  1.0.0, misses those iframes, because their requests are initiated by the
+  iframe and not by the page. Priority 100 outranks the block rules
+  (priority 1). Because the rule is evaluated when the page is requested,
+  changes apply on the next load. Session rules are cleared on browser
+  restart and rebuilt in `onStartup`.
+- **Serialised reconcile**: start-up, `onInstalled` and `storage.onChanged`
+  can fire together. Reconciles run one after another, and each re-reads
+  storage, so a slow pass can never overwrite a newer state.
+- **Messaging**: `getState`, `setEnabled`, `setAllowed`, `setAllowlist` from
+  the extension's own pages only (see [SECURITY.md](SECURITY.md)).
+
+Static rules use ids `1..N`; the allowlist rule uses `1000000`.
 
 ## 3. Cosmetic filtering — `src/content/`
 
@@ -56,12 +73,16 @@ an obvious page-readable global.
 `cosmetic.js`:
 
 1. Reads `enabled` + `allowlist` from `chrome.storage.local`.
-2. If active for this host, builds a CSS string from the matching selectors and
-   injects a `<style>` element (`textContent`, never `innerHTML`).
-3. Hidden elements are **collapsed** (`display: none`) rather than removed.
-4. A lightweight `MutationObserver` only re-attaches the style if a SPA wipes
+2. Decides by the **top-level** site, using `location.ancestorOrigins` inside
+   iframes, the same way the network allowlist does.
+3. If active, builds one CSS rule **per selector** and injects a `<style>`
+   element (`textContent`, never `innerHTML`). With one rule per selector, a
+   selector the browser can't parse drops only itself. In a combined selector
+   list it would invalidate every selector.
+4. Hidden elements are **collapsed** (`display: none`) rather than removed.
+5. A lightweight `MutationObserver` only re-attaches the style if a SPA wipes
    `<head>` — the CSS rule itself already covers dynamically inserted ads.
-5. Subscribes to `chrome.storage.onChanged` so popup changes apply live.
+6. Subscribes to `chrome.storage.onChanged` so popup changes apply live.
 
 The content script runs at `document_start` in `all_frames`, in the **isolated
 world**, so the page's own scripts cannot read or tamper with its variables.
@@ -69,7 +90,7 @@ world**, so the page's own scripts cannot read or tamper with its variables.
 ## Data flow
 
 ```
-popup.js  ──sendMessage──▶ background.js ──▶ chrome.storage.local
+popup.js / options.js ──sendMessage──▶ background.js ──▶ chrome.storage.local
                                 │                   │
                                 ▼                   ▼ onChanged
                   declarativeNetRequest      content/cosmetic.js
@@ -86,3 +107,15 @@ popup.js  ──sendMessage──▶ background.js ──▶ chrome.storage.loca
   allowlist: ["example.com"] // sanitised registrable hosts
 }
 ```
+
+## 4. Tooling
+
+| Script | Role |
+| --- | --- |
+| `scripts/build-rules.mjs` | `ad-domains.txt` → `network-rules.json`; flags redundant entries |
+| `scripts/validate-rules.mjs` | CI gate: DNR schema and limits, project policy, sync, manifest rulesets |
+| `scripts/lib/dnr.mjs` | Offline model of DNR: validator, plus a `urlFilter` matcher with Chrome's action precedence. It follows Chromium's `indexed_rule.cc` and the DNR API definition. |
+| `scripts/package.mjs` | Store ZIP: manifest/permission/CSP gates, reachability-based file list, deterministic archive + SHA-256 |
+| `scripts/lib/zip.mjs` | Dependency-free deterministic ZIP writer/reader |
+| `e2e/extension.e2e.mjs` | Loads the packaged ZIP into Chromium and checks blocking, hiding, allowlist, master switch and permissions |
+| `scripts/store-assets.mjs` | Regenerates the store screenshots and promo tile from the real UI |

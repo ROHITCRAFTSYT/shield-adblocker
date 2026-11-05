@@ -16,21 +16,30 @@ vector against the user or weaponised by a hostile web page.
 | --- | --- | --- |
 | Web page DOM / scripts | **No** | Content script runs in isolated world; selectors are static; no page data is ever interpreted as code. |
 | Other extensions | **No** | No `externally_connectable`; service worker rejects any message whose `sender.id` ≠ our runtime id. |
-| Content script → worker | **Limited** | Worker rejects messages that carry a `sender.tab` (i.e. came from a tab/content script), so a compromised content script cannot drive privileged actions. |
-| Popup → worker | **Yes (own page)** | Still fully input-validated. |
+| Content script → worker | **No** | The worker only accepts messages whose `sender.url` is on the extension's own `chrome-extension://<id>/` origin. Content scripts share the extension id but report the web page's URL, so they are ignored. |
+| Popup / options page → worker | **Yes (own pages)** | Still fully input-validated. |
 | Network | **No** | The extension makes **no** outbound requests of its own. |
 
 ## Hardening checklist
 
 ### Permissions (least privilege)
-- `declarativeNetRequest` / `declarativeNetRequestFeedback` — blocking + per-tab
-  match counts.
-- `storage` — persist the toggle and allowlist locally.
-- `scripting` — reserved for cosmetic injection plumbing.
-- `activeTab` — read only the active tab's URL when the popup is opened.
-- `host_permissions: <all_urls>` — required for cosmetic CSS on any site. This is
-  the broadest grant and is documented here deliberately; the extension never
-  uses it to read page content or make requests.
+- `declarativeNetRequest`: blocking, plus the allowlist rule. Block and
+  allow-type rules need no host permissions.
+- `storage`: persist the toggle and allowlist locally.
+- `activeTab`: when the user opens the popup, read the active tab's URL and
+  call `getMatchedRules` for that tab only. Chromium makes `getMatchedRules`
+  available to an extension "with the declarativeNetRequestFeedback
+  permission or having the activeTab permission granted for the tabId", so
+  the broader feedback permission is not requested.
+- Content script on `http://*/*` and `https://*/*`: injects cosmetic CSS. It
+  produces Chrome's "Read and change all your data on all websites" warning,
+  which is inherent to a cosmetic filter. There are **no** `host_permissions`.
+
+Removed in 1.1.0: `scripting` (unused), `declarativeNetRequestFeedback`
+(replaced by `activeTab`), and `host_permissions: <all_urls>` (never needed).
+The packager (`scripts/package.mjs`) fails the build if the permission set
+changes, if host permissions, `externally_connectable` or
+`web_accessible_resources` appear, or if the CSP is loosened.
 
 ### No remote code / no dynamic code
 - No `eval`, `new Function`, `setTimeout(string, …)`.
@@ -44,17 +53,24 @@ vector against the user or weaponised by a hostile web page.
 - Cosmetic CSS is assembled from **static constant** selectors, never from
   page-controlled strings, so there is no CSS/DOM injection surface.
 
-### Message handler validation (`background.js`)
-1. `sender.id === chrome.runtime.id` — only our own pages.
-2. `!sender.tab` — reject content-script / tab origins for privileged actions.
-3. Message must be an object with an action in an explicit allowlist
-   (`getState`, `setEnabled`, `setAllowed`).
-4. Values are type/shape checked: `enabled` must be boolean; hosts must match a
-   strict hostname regex; the allowlist is sanitised and length-capped.
+### Message handler validation (`src/background.js`, `src/lib/policy.js`)
+1. `isTrustedSender`: `sender.id === chrome.runtime.id` **and** `sender.url`
+   starts with `chrome-extension://<id>/`. This admits the popup and the
+   options page, even when the options page is opened in a tab, and rejects
+   content scripts and other extensions. The old `!sender.tab` check would
+   have rejected the options page.
+2. The message must be an object with an action in an explicit allowlist:
+   `getState`, `setEnabled`, `setAllowed`, `setAllowlist`.
+3. `planCommand` type-checks every value: `enabled` must be a boolean, hosts
+   must match a strict hostname pattern, and lists are sanitised and capped.
+   It is a pure function with unit tests for each rejection path.
 
 ### Input sanitisation
-- Hostnames are validated against a strict regex, lower-cased, `www.` stripped,
-  de-duplicated, and capped (defensive against state bloat).
+- Hostnames are validated against a strict regex: public-looking names only,
+  including punycode TLDs. IP literals and `localhost` are rejected. Names are
+  lower-cased, `www.` is stripped, entries are de-duplicated, and the list is
+  capped at 5000. The worker re-sanitises everything it reads from storage,
+  so a malformed stored value can't reach a DNR rule.
 - Invalid input is dropped, never partially applied.
 
 ### Fail-safe behavior
@@ -65,8 +81,19 @@ vector against the user or weaponised by a hostile web page.
 
 ## Known residual risks
 
-- **Broad host permission.** `<all_urls>` is inherent to a cosmetic ad blocker.
-  We mitigate by never reading or transmitting page content.
+- **All-sites content script.** Cosmetic filtering needs a content script on
+  every site. It only injects a static stylesheet. It never reads page
+  content, and it has no channel to the network.
+- **Content scripts can write `chrome.storage.local`.** Chromium's default is
+  that `local` storage "allow[s] access from both trusted and untrusted
+  contexts". A content script whose isolated world is compromised (which
+  needs a renderer exploit on a hostile page) could change the `enabled` flag
+  or the allowlist directly, without going through the message handler.
+  The worker re-sanitises whatever it reads, so this cannot inject a
+  malformed rule. The worst outcome is that blocking is switched off or a
+  site is allowlisted. The fix is to restrict `local` to trusted contexts
+  with `storage.local.setAccessLevel` and serve content scripts a read-only
+  view. That is tracked as a follow-up; it is not done yet.
 - **Detection.** Anti-adblock walls may still infer blocking. This is a
   functionality limitation, not a security hole.
 

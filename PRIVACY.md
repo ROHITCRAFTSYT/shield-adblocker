@@ -16,10 +16,13 @@
 
 | Permission | Purpose | Data leaves device? |
 | --- | --- | --- |
-| `declarativeNetRequest` (+ feedback) | Block ad/tracker requests; count blocks per tab | No |
-| `storage` | Save your toggle + allowlist locally | No |
-| `scripting` | Cosmetic CSS injection plumbing | No |
-| `activeTab` | Read the active tab's URL when you open the popup | No |
-| `host_permissions: <all_urls>` | Apply cosmetic CSS on any site | No |
+| `declarativeNetRequest` | Block ad/tracker requests with bundled rules; apply your allowlist | No |
+| `storage` | Save your on/off switch and allowlist locally | No |
+| `activeTab` | When you open the popup: read the current tab's address and its blocked-request count | No |
+| Content script on all `http`/`https` pages | Insert the CSS that hides leftover ad slots | No |
+
+The extension has no host permissions and makes no network requests. Its
+pages read the bundled rule file from inside the extension package, which is
+a local read, not a network fetch.
 
 No data is ever sold, shared, or transmitted. This is a local, offline tool.

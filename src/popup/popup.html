@@ -15,10 +15,10 @@
     <div class="brand">
       <span class="mark">◇</span>
       <span class="word">SHIELD</span>
-      <span class="ver">v1.0</span>
+      <span class="ver" id="ver"></span>
     </div>
-    <div class="conn">
-      <span class="dot" id="stateDot"></span>
+    <div class="conn" role="status" aria-live="polite">
+      <span class="dot" id="stateDot" aria-hidden="true"></span>
       <span class="conn-txt" id="status">init…</span>
     </div>
   </header>
@@ -56,7 +56,7 @@
         <span class="ctl-sub" id="globalSub">Network + cosmetic filtering</span>
       </span>
       <span class="sw">
-        <input type="checkbox" id="globalToggle" />
+        <input type="checkbox" id="globalToggle" role="switch" />
         <span class="sw-track"><span class="sw-knob"></span></span>
       </span>
     </label>
@@ -67,17 +67,21 @@
         <span class="ctl-sub" id="siteSub">Pause blocking on this domain</span>
       </span>
       <span class="sw">
-        <input type="checkbox" id="siteToggle" />
+        <input type="checkbox" id="siteToggle" role="switch" />
         <span class="sw-track"><span class="sw-knob"></span></span>
       </span>
     </label>
+    <div class="notice" id="reloadNotice" hidden>
+      <span class="notice-txt">Reload the page to apply</span>
+      <button type="button" class="notice-btn" id="reloadBtn">Reload</button>
+    </div>
   </section>
 
   <footer class="foot reveal" style="--d:4">
-    <span class="foot-id">SHIELD ADBLOCKER</span>
     <span class="foot-meta">no telemetry · runs local</span>
+    <button type="button" class="foot-link" id="openOptions">settings →</button>
   </footer>
 
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

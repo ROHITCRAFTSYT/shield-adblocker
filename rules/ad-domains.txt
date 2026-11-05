@@ -11,7 +11,6 @@
 # --- Google advertising & analytics ---
 doubleclick.net
 googlesyndication.com
-pagead2.googlesyndication.com
 googleadservices.com
 adservice.google.com
 googletagservices.com
@@ -31,7 +30,7 @@ adtechus.com
 yieldmanager.com
 ads.yahoo.com
 analytics.yahoo.com
-bing.com/bat
+bat.bing.com
 clarity.ms
 ads.microsoft.com
 yandex.ru/clck
@@ -189,7 +188,6 @@ analytics.tiktok.com
 business-api.tiktok.com
 ads.pinterest.com
 ads.linkedin.com
-px.ads.linkedin.com
 snap.licdn.com
 ads-twitter.com
 analytics.twitter.com

@@ -1,20 +1,31 @@
 {
   "name": "shield-adblocker",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A fast, private, stealthy MV3 ad and tracker blocker for Chromium browsers.",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "author": "ROHITCRAFTSYT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ROHITCRAFTSYT/shield-adblocker.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:rules": "node scripts/build-rules.mjs",
     "lint:json": "node scripts/validate-rules.mjs",
     "lint:js": "eslint .",
     "lint": "npm run lint:json && npm run lint:js",
-    "test": "node --test"
+    "test": "node --test",
+    "package": "node scripts/package.mjs",
+    "test:e2e": "node e2e/extension.e2e.mjs",
+    "check": "npm run lint && npm test && npm run package"
   },
-  "license": "MIT",
-  "author": "ROHITCRAFTSYT",
   "devDependencies": {
     "@eslint/js": "^9.13.0",
-    "eslint": "^9.13.0"
+    "eslint": "^9.13.0",
+    "playwright": "1.63.0"
   }
 }

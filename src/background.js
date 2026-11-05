@@ -1,121 +1,54 @@
 /*
- * background.js  (MV3 service worker)
+ * background.js  (MV3 service worker, ES module)
  *
  * Responsibilities:
  *  - Initialise persisted state (enabled flag + allowlist).
  *  - Reflect the global on/off switch onto the static blocking ruleset.
- *  - Translate the allowlist into high-priority session "allow" rules so that
- *    allowlisted top-level sites are never network-filtered.
- *  - Handle popup commands with strict sender + shape validation.
+ *  - Translate the allowlist into one high-priority session
+ *    "allowAllRequests" rule, so allowlisted sites are never network-filtered.
+ *  - Handle popup / options-page commands with strict sender + shape checks.
+ *
+ * All decisions live in src/lib/policy.js (pure, unit-tested); this file is
+ * only the chrome.* wiring.
  *
  * Security posture:
- *  - Only same-extension senders are honoured (sender.id === runtime id).
+ *  - Only this extension's own pages are honoured (see isTrustedSender).
  *  - Action names are an explicit allowlist; unknown messages are dropped.
- *  - All inputs are type/shape checked before use.
+ *  - Everything read from storage is re-sanitised before use.
  *  - No remote code, no eval, no network fetch.
  */
-"use strict";
-
-const STATIC_RULESET_ID = "ad_block_rules";
-
-// Session "allow" rules occupy a reserved high id range so they never collide
-// with the static ruleset ids (1..N in rules/network-rules.json).
-const ALLOW_RULE_BASE = 1000000;
-const ALLOW_RULE_PRIORITY = 100; // > static block priority (1) so allow wins.
-
-const DEFAULT_STATE = Object.freeze({ enabled: true, allowlist: [] });
+import {
+  STATIC_RULESET_ID,
+  buildAllowRules,
+  isTrustedSender,
+  normalizeState,
+  planCommand
+} from "./lib/policy.js";
 
 /* ------------------------------ state helpers ----------------------------- */
 
-function getState() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(DEFAULT_STATE, (s) => {
-      resolve({
-        enabled: s.enabled !== false,
-        allowlist: sanitizeAllowlist(s.allowlist)
-      });
-    });
-  });
-}
-
-// Accept only plausible hostnames: lowercase, no scheme, no path, no spaces.
-const HOST_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
-
-function sanitizeHost(value) {
-  if (typeof value !== "string") return null;
-  let h = value.trim().toLowerCase();
-  if (h.startsWith("www.")) h = h.slice(4);
-  return HOST_RE.test(h) ? h : null;
-}
-
-function sanitizeAllowlist(arr) {
-  if (!Array.isArray(arr)) return [];
-  const out = [];
-  for (const item of arr) {
-    const h = sanitizeHost(item);
-    if (h && out.indexOf(h) === -1) out.push(h);
-    if (out.length >= 5000) break; // hard cap; defensive against bloat.
-  }
-  return out;
+async function getState() {
+  const raw = await chrome.storage.local.get(["enabled", "allowlist"]);
+  return normalizeState(raw);
 }
 
 /* --------------------------- ruleset / allow rules ------------------------ */
 
 async function applyEnabledState(enabled) {
-  try {
-    await chrome.declarativeNetRequest.updateEnabledRulesets(
-      enabled
-        ? { enableRulesetIds: [STATIC_RULESET_ID], disableRulesetIds: [] }
-        : { enableRulesetIds: [], disableRulesetIds: [STATIC_RULESET_ID] }
-    );
-  } catch (e) {
-    // Surface to console for debugging; never throw out of the worker.
-    console.warn("[Shield] failed to toggle ruleset:", e);
-  }
+  await chrome.declarativeNetRequest.updateEnabledRulesets(
+    enabled
+      ? { enableRulesetIds: [STATIC_RULESET_ID] }
+      : { disableRulesetIds: [STATIC_RULESET_ID] }
+  );
 }
 
 async function syncAllowRules(state) {
-  // Clear any existing session allow rules, then add fresh ones.
-  let existing = [];
-  try {
-    existing = await chrome.declarativeNetRequest.getSessionRules();
-  } catch (_) {
-    existing = [];
-  }
-  const removeIds = existing
-    .filter((r) => r.id >= ALLOW_RULE_BASE)
-    .map((r) => r.id);
-
-  const addRules = [];
-  if (state.enabled && state.allowlist.length) {
-    state.allowlist.forEach((domain, i) => {
-      addRules.push({
-        id: ALLOW_RULE_BASE + i,
-        priority: ALLOW_RULE_PRIORITY,
-        action: { type: "allow" },
-        condition: {
-          // Allow every request initiated by the allowlisted top-level site.
-          initiatorDomains: [domain]
-        }
-      });
-    });
-  }
-
-  try {
-    await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: removeIds,
-      addRules
-    });
-  } catch (e) {
-    console.warn("[Shield] failed to sync allow rules:", e);
-  }
-}
-
-async function reconcile() {
-  const state = await getState();
-  await applyEnabledState(state.enabled);
-  await syncAllowRules(state);
-  updateBadge(state.enabled);
+  // We own every session rule, so replace them wholesale in one atomic call.
+  const existing = await chrome.declarativeNetRequest.getSessionRules();
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: existing.map((r) => r.id),
+    addRules: buildAllowRules(state)
+  });
 }
 
 function updateBadge(enabled) {
@@ -127,20 +60,46 @@ function updateBadge(enabled) {
   }
 }
 
+async function doReconcile() {
+  try {
+    const state = await getState();
+    await applyEnabledState(state.enabled);
+    await syncAllowRules(state);
+    updateBadge(state.enabled);
+  } catch (e) {
+    // Surface for debugging; never throw out of the worker.
+    console.warn("[Shield] reconcile failed:", e);
+  }
+}
+
+// Reconciles are serialised. Several triggers fire close together (worker
+// start-up, onInstalled, storage.onChanged); run concurrently, two passes
+// could both read an empty session ruleset and the slower, older one could
+// overwrite the newer state. Each pass re-reads storage, so running them in
+// order always converges on the latest state.
+let reconcileQueue = Promise.resolve();
+function reconcile() {
+  reconcileQueue = reconcileQueue.then(doReconcile);
+  return reconcileQueue;
+}
+
 /* ------------------------------- lifecycle -------------------------------- */
 
 chrome.runtime.onInstalled.addListener(async () => {
+  // Persist sanitised defaults so every reader sees a clean shape. Enabled
+  // static rulesets reset to the manifest default on update, so reconcile.
   const current = await getState();
-  // Persist sanitised defaults so popup/content always read a clean shape.
-  chrome.storage.local.set(current, () => reconcile());
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  // Session rules are cleared on browser restart; rebuild from persisted state.
+  await chrome.storage.local.set(current);
   reconcile();
 });
 
-// Keep rules in sync if state changes from anywhere (popup writes storage).
+chrome.runtime.onStartup.addListener(() => {
+  // Session rules are cleared on browser restart; rebuild from storage.
+  reconcile();
+});
+
+// Keep rules in sync whenever state changes (the popup and options page both
+// write through the message handler below, which persists to storage).
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.enabled || changes.allowlist) reconcile();
@@ -148,47 +107,26 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 /* ----------------------------- message handler ---------------------------- */
 
-const ACTIONS = {
-  getState: async () => {
-    return await getState();
-  },
-  setEnabled: async (msg) => {
-    if (typeof msg.value !== "boolean") throw new Error("bad value");
-    await new Promise((res) => chrome.storage.local.set({ enabled: msg.value }, res));
-    return await getState();
-  },
-  setAllowed: async (msg) => {
-    // Add/remove the given host from the allowlist. value: boolean (allowed?)
-    const host = sanitizeHost(msg.host);
-    if (host === null || typeof msg.value !== "boolean") throw new Error("bad input");
-    const state = await getState();
-    const set = new Set(state.allowlist);
-    if (msg.value) set.add(host);
-    else set.delete(host);
-    const allowlist = sanitizeAllowlist(Array.from(set));
-    await new Promise((res) => chrome.storage.local.set({ allowlist }, res));
-    return await getState();
-  }
-};
+const EXTENSION_URL = chrome.runtime.getURL("");
+
+async function handle(message) {
+  const state = await getState();
+  const { patch } = planCommand(message, state);
+  if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+  return await getState();
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // 1) Only accept messages from THIS extension's own pages (popup).
-  //    Content scripts / web pages have no sender.id equal to our runtime id
-  //    for externally_connectable, and we never set externally_connectable.
-  if (!sender || sender.id !== chrome.runtime.id) return false;
-  // 2) Reject anything originating from a tab (content scripts). The popup has
-  //    no sender.tab. This stops a compromised content script from driving us.
-  if (sender.tab) return false;
-  // 3) Validate the message shape.
-  if (!message || typeof message !== "object") return false;
-  const handler = ACTIONS[message.action];
-  if (!handler) return false;
+  // Only this extension's own pages (popup, options). Content scripts and
+  // other extensions are ignored without a reply.
+  if (!isTrustedSender(sender, chrome.runtime.id, EXTENSION_URL)) return false;
+  if (!message || typeof message !== "object" || typeof message.action !== "string") return false;
 
-  handler(message)
-    .then((result) => sendResponse({ ok: true, data: result }))
-    .catch((err) => sendResponse({ ok: false, error: String(err && err.message || err) }));
+  handle(message)
+    .then((data) => sendResponse({ ok: true, data }))
+    .catch((err) => sendResponse({ ok: false, error: String((err && err.message) || err) }));
   return true; // async response.
 });
 
-// Best-effort initial reconcile when the worker spins up.
+// Best-effort reconcile whenever the worker spins up.
 reconcile();
