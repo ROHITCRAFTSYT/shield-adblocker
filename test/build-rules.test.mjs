@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseDomains, buildRules, findRedundantEntries } from "../scripts/build-rules.mjs";
+import { parseDomains, buildRules, findRedundantEntries, findRuleCounts, syncRuleCounts } from "../scripts/build-rules.mjs";
 
 test("parseDomains skips blank lines and comments", () => {
   const out = parseDomains("# a comment\n\n  \nfacebook.com\n");
@@ -71,4 +71,22 @@ test("findRedundantEntries flags subdomains and paths covered by a broader entry
 
 test("findRedundantEntries does not treat lookalike suffixes as parents", () => {
   assert.deepEqual(findRedundantEntries(["ads.com", "badads.com", "x.ads.co"]), []);
+});
+
+test("findRuleCounts reads the count only where the phrasing marks it", () => {
+  const text = [
+    "- Network blocking of 187 well-known ad and tracker endpoints",
+    "a curated set of 12 common ad and tracker endpoints",
+    "Stops requests to 3 well-known ad and tracking services",
+    "Tests pin 19 real tracker URLs; 99 tests pass; 2026 well-known facts"
+  ].join("\n");
+  assert.deepEqual(findRuleCounts(text), [187, 12, 3]);
+  assert.deepEqual(findRuleCounts("no numbers here"), []);
+});
+
+test("syncRuleCounts rewrites every marked count and nothing else", () => {
+  const text = "Blocks 180 well-known ad and tracker endpoints.\n```\nStops 5 well-known ad and tracking services\n```\nSee 19 real tracker URLs.";
+  assert.equal(syncRuleCounts(text, 190),
+    "Blocks 190 well-known ad and tracker endpoints.\n```\nStops 190 well-known ad and tracking services\n```\nSee 19 real tracker URLs.");
+  assert.equal(syncRuleCounts(text, 190), syncRuleCounts(syncRuleCounts(text, 190), 190), "idempotent");
 });

@@ -33,7 +33,9 @@ CI rejects a PR when:
 
 - `network-rules.json` is out of sync with the source list;
 - a rule breaks Chrome's DNR schema;
-- an entry is already covered by a broader one (`x.a.com` next to `a.com`).
+- an entry is already covered by a broader one (`x.a.com` next to `a.com`);
+- the rule count in `README.md` or `docs/store-listing.md` is stale. Commit
+  the files that `npm run build:rules` rewrites.
 
 Check that your entry matches the endpoint the tracker really uses. Add that
 URL to `MUST_BLOCK` in `test/dnr-match.test.mjs`. `bing.com/bat` shipped in

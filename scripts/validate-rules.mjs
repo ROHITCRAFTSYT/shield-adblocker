@@ -11,13 +11,14 @@
  *  3. The JSON is in sync with the source list rules/ad-domains.txt.
  *  4. The source list has no entries already covered by a broader entry.
  *  5. The manifest's rule_resources point at real files with valid ids.
+ *  6. The rule count quoted in the docs (COUNT_DOCS) matches the ruleset.
  *
  * Usage: node scripts/validate-rules.mjs
  */
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { parseDomains, buildRules, findRedundantEntries } from "./build-rules.mjs";
+import { COUNT_DOCS, buildRules, findRedundantEntries, findRuleCounts, parseDomains } from "./build-rules.mjs";
 import { validateRuleset, validateRuleResources } from "./lib/dnr.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +79,20 @@ export function validateProject(root) {
   }
 
   errors.push(...validateRuleResources(manifest, (p) => existsSync(resolve(root, p))));
-  return { errors, count: Array.isArray(rules) ? rules.length : 0 };
+
+  const count = Array.isArray(rules) ? rules.length : 0;
+  for (const rel of COUNT_DOCS) {
+    const path = resolve(root, rel);
+    if (!existsSync(path)) continue; // docs are not part of every checkout (e.g. package fixtures)
+    const found = findRuleCounts(readFileSync(path, "utf8"));
+    if (found.length === 0) {
+      errors.push(`${rel}: no rule count found; quote it as "<N> well-known ad and tracker…", or drop the file from COUNT_DOCS in scripts/build-rules.mjs`);
+    }
+    for (const n of new Set(found)) {
+      if (n !== count) errors.push(`${rel} says ${n} rules but the ruleset has ${count}; run \`npm run build:rules\``);
+    }
+  }
+  return { errors, count };
 }
 
 function main() {

@@ -4,9 +4,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { validateRule, validateRuleset, validateRuleResources, LIMITS } from "../scripts/lib/dnr.mjs";
 import { checkPolicy, validateProject } from "../scripts/validate-rules.mjs";
@@ -140,4 +141,24 @@ test("the shipped ruleset passes schema, policy, sync and manifest checks", () =
   assert.deepEqual(errors, []);
   assert.equal(count, SHIPPED.length);
   assert.ok(count > 100, "expected a non-trivial blocklist");
+});
+
+test("a stale or missing rule count in the docs fails validation", () => {
+  const dir = mkdtempSync(join(tmpdir(), "shield-count-"));
+  try {
+    for (const p of ["manifest.json", "rules", "README.md", "docs/store-listing.md"]) {
+      cpSync(join(ROOT, p), join(dir, p), { recursive: true });
+    }
+    assert.deepEqual(validateProject(dir).errors, []);
+
+    const readme = join(dir, "README.md");
+    const original = readFileSync(readme, "utf8");
+    writeFileSync(readme, original.replace(/\b\d+(?= well-known ad and tracker)/, "999"));
+    assert.match(validateProject(dir).errors.join("\n"), /README\.md says 999 rules but the ruleset has \d+; run `npm run build:rules`/);
+
+    writeFileSync(readme, original.replace(/\b\d+ (well-known|common) ad and tracker/g, "many $1 ad and tracker"));
+    assert.match(validateProject(dir).errors.join("\n"), /README\.md: no rule count found/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

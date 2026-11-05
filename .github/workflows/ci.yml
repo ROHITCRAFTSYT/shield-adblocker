@@ -38,11 +38,11 @@ jobs:
       - name: Lint JavaScript (eslint)
         run: npm run lint:js
 
-      - name: Verify rules are committed in built form
+      - name: Verify generated files are committed (rules + rule count in docs)
         run: |
           npm run build:rules
-          git diff --exit-code rules/network-rules.json \
-            || (echo "::error::network-rules.json is stale; run 'npm run build:rules' and commit" && exit 1)
+          git diff --exit-code \
+            || (echo "::error::generated files are stale; run 'npm run build:rules' and commit" && exit 1)
 
   test:
     name: test (node ${{ matrix.node }})
